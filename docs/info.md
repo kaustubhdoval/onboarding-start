@@ -9,11 +9,11 @@ You can also include images in this folder and reference them in the markdown. E
 
 ## How it works
 
-Explain how your project works
+The project is a SPI-controlled PWM peripheral for Tiny Tapeout.
 
 ## How to test
 
-Explain how to use your project
+Configure iverilog and othe dependencies on an Ubuntu machine or Windows WSL. Go to test directory and run 'make -B'
 
 ## External hardware
 
