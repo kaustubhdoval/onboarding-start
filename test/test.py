@@ -4,17 +4,17 @@
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge
-from cocotb.triggers import ClockCycles
+from cocotb.triggers import ClockCycles, ValueChange
 from cocotb.types import Logic
 from cocotb.types import LogicArray
 
 async def await_half_sclk(dut):
     """Wait for the SCLK signal to go high or low."""
-    start_time = cocotb.utils.get_sim_time(units="ns")
+    start_time = cocotb.utils.get_sim_time(unit="ns")
     while True:
         await ClockCycles(dut.clk, 1)
         # Wait for half of the SCLK period (10 us)
-        if (start_time + 100*100*0.5) < cocotb.utils.get_sim_time(units="ns"):
+        if (start_time + 100*100*0.5) < cocotb.utils.get_sim_time(unit="ns"):
             break
     return
 
@@ -88,7 +88,7 @@ async def test_spi(dut):
     dut._log.info("Start SPI test")
 
     # Set the clock period to 100 ns (10 MHz)
-    clock = Clock(dut.clk, 100, units="ns")
+    clock = Clock(dut.clk, 100, unit="ns")
     cocotb.start_soon(clock.start())
 
     # Reset
@@ -149,9 +149,56 @@ async def test_spi(dut):
 
     dut._log.info("SPI test completed successfully")
 
+async def get_period(signal, bit=0):
+    prev = (signal.value.to_unsigned() >> bit) & 1
+    
+    t1 = None
+    while True:
+        await cocotb.triggers.ValueChange(signal)
+        cur = (signal.value.to_unsigned() >> bit) & 1
+        if prev == 0 and cur == 1:          # rising edge on the bit
+            if t1 is None:
+                t1 = cocotb.utils.get_sim_time(unit="ns")
+            else:
+                t2 = cocotb.utils.get_sim_time(unit="ns")
+                return t2 - t1
+        prev = cur
+
 @cocotb.test()
 async def test_pwm_freq(dut):
-    # Write your test here
+    dut._log.info("Start SPI test")
+
+    # Set the clock period to 100 ns (10 MHz)
+    clock = Clock(dut.clk, 100, unit="ns")
+    cocotb.start_soon(clock.start())
+
+    # Reset
+    dut._log.info("Reset")
+    dut.ena.value = 1
+    dut.rst_n.value = 0
+    await ClockCycles(dut.clk, 5)
+    dut.rst_n.value = 1
+    await ClockCycles(dut.clk, 5)
+
+    # Enable outputs and PWM
+    await send_spi_transaction(dut, 1, 0x00, 0xFF)   # Enable output for uo_out
+    await send_spi_transaction(dut, 1, 0x01, 0xFF)   # Enable output for uio_out
+    await send_spi_transaction(dut, 1, 0x02, 0xFF)   # Enable PWM for uo_out
+    await send_spi_transaction(dut, 1, 0x03, 0xFF)   # Enable PWM for uio_out
+    await send_spi_transaction(dut, 1, 0x04, 0x80)  # Set PWM duty cycle to 50%
+
+    outputs = [dut.uo_out, dut.uio_out]
+
+    # Need to test all outputs for 3kHz with +-1% tolerance 
+    for bus_name in ['uo_out', 'uio_out']:
+        signal = getattr(dut, bus_name)      # packed 8-bit signal
+        for bit in range(8):
+            period_ns = await get_period(signal, bit)
+            freq_hz = 1e9 / period_ns
+            dut._log.info(f"{bus_name}[{bit}] frequency = {freq_hz:.2f} Hz")
+            assert 2970 <= freq_hz <= 3030, \
+                f"{bus_name}[{bit}]: expected ~3000 Hz, got {freq_hz:.2f} Hz"
+
     dut._log.info("PWM Frequency test completed successfully")
 
 
