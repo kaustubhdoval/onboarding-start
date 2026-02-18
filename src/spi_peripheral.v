@@ -22,6 +22,13 @@ reg [1:0] sclk_sync;
 reg [1:0] copi_sync;
 reg [1:0] ncs_sync;
 
+// Reset the synchronizers
+initial begin
+    sclk_sync = 2'b00;
+    copi_sync = 2'b00;
+    ncs_sync  = 2'b11; // nCS is active low
+end
+
 always @(posedge clk) begin
     sclk_sync <= {sclk_sync[0], sclk};
     copi_sync <= {copi_sync[0], copi};
@@ -35,7 +42,6 @@ wire ncs_rising  = (ncs_sync == 2'b01);
 wire copi_s = copi_sync[1];
 
 // Start bit counter and shift register for SPI reception
-
 reg[15:0] shift_reg;
 reg [4:0] bit_count;
 
@@ -94,24 +100,15 @@ always @(posedge clk or negedge rst_n) begin
         // Transaction is ready and not yet processed
         // Update the registers with the received data
         if (rw) begin
-                if (address == 7'h00)
-                    en_reg_out_7_0 <= data;
-
-                else if (address == 7'h01)
-                    en_reg_out_15_8 <= data;
-
-                else if (address == 7'h02)
-                    en_reg_pwm_7_0 <= data;
-
-                else if (address == 7'h03)
-                    en_reg_pwm_15_8 <= data;
-
-                else if (address == 7'h04)
-                    pwm_duty_cycle <= data;
-
-                // invalid addresses ignored
-            end
-
+            case (address)
+                7'h00: en_reg_out_7_0   <= data;
+                7'h01: en_reg_out_15_8  <= data;
+                7'h02: en_reg_pwm_7_0   <= data;
+                7'h03: en_reg_pwm_15_8  <= data;
+                7'h04: pwm_duty_cycle   <= data;
+                // ignore invalid addresses
+            endcase
+        end
         // Set the processed flag
         transaction_processed <= 1'b1;
     
